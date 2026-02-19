@@ -1,6 +1,7 @@
 """Interface with a CouchDB instance for JSON report documents"""
 
 
+import re
 import configparser
 import json
 import logging
@@ -65,7 +66,34 @@ class database(logger):
         Upload the report data structure to couchdb
         Full upload URL is intentionally not logged, as it contains the DB username/password
         """
-        report_id = report_data[cc.CORE][cc.REPORT_ID]
+
+        original_report_id = report_data[cc.CORE][cc.REPORT_ID]
+
+        try:
+            attributes = (
+                report_data
+                .get("plugins", {})
+                .get("case_overview", {})
+                .get("attributes", [])
+            )
+            analysis_type = "_".join(attributes) if attributes else None
+
+            if analysis_type:
+                # Match everything before v<number>
+                match = re.match(r"^(.*?)([vV]\d+)$", original_report_id)
+
+                if match:
+                    base_id, version = match.groups()
+                    report_id = f"{base_id}-{version}_{analysis_type}"
+                else:
+                    # Fallback if no version pattern is found
+                    report_id = f"{original_report_id}_{analysis_type}"
+            else:
+                report_id = original_report_id
+
+        except (KeyError, AttributeError, TypeError):
+            report_id = original_report_id
+
         db, url = self.get_upload_params()
         headers = {'Content-Type': 'application/json'}
         attempts = 0
@@ -115,7 +143,3 @@ class database(logger):
         with open(json_path) as report:
             report_data = json.load(report)
         return self.upload_data(report_data)
-
-
-    
-
